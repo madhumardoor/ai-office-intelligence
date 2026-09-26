@@ -1,0 +1,22 @@
+{
+  "file_name": "all_cities_test_100.csv",
+  "rows_total": 100,
+  "inserted": 0,
+  "updated": 19,
+  "unchanged": 81,
+  "needs_review": 0,
+  "failed": 0,
+  "geocoded": 0,
+  "geocode_missing": 0,
+  "tenancies_upserted": 0,
+  "unknown_columns": [
+    "category",
+    "google_cid",
+    "country_code",
+    "place_id",
+    "postal_code",
+    " listing_url"
+  ],
+  "issues": [],
+  "resumed_from_row": 0
+}

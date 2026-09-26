@@ -1,0 +1,73 @@
+[project]
+name = "ai-office-intelligence"
+version = "0.1.0"
+description = "AI Office Demand Intelligence Platform"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.8",
+    "pydantic-settings>=2.4",
+    "sqlalchemy[asyncio]>=2.0.30",
+    "asyncpg>=0.29",
+    "alembic>=1.13",
+    "geoalchemy2>=0.15",
+    "pgvector>=0.3",
+    "httpx>=0.27",
+    "tenacity>=9.0",
+    "pandas>=3.0.6",
+    "openpyxl>=3.1.5",
+    "rapidfuzz>=3.14.6",
+    "phonenumbers>=9.0.39",
+    "sentence-transformers>=6.1.0",
+    "pypdf>=6.19.0",
+    "python-docx>=1.2.0",
+    "beautifulsoup4>=4.15.0",
+    "lxml>=6.1.3",
+    "numpy>=2.5.3",
+    "langchain-core>=0.3",
+    "langchain-google-genai>=2.0",
+    "langchain-openai>=0.2",
+    "langchain-groq>=1.1.3",
+    "langgraph>=1.2.12",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "testcontainers[postgres]>=4.7",
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+markers = [
+    "integration: requires a running Postgres (PostGIS+pgvector)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
