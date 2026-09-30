@@ -1,37 +1,38 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 from langchain_core.tools import StructuredTool
-from app.tools.news_search import news_search
-from app.tools.schemas.inputs import NewsSearchInput, WebSearchInput
-from app.tools.search_cache import SearchCache
-from app.tools.search_provider import SearchProvider
-from app.tools.web_search import web_search
 
 from app.retrieval.hybrid import HybridRetriever
 from app.tools.calculator import calculate
 from app.tools.company_search import company_search
 from app.tools.coworking_search import coworking_search
 from app.tools.db.readonly import ReadOnlyDatabase
+from app.tools.news_search import news_search
 from app.tools.postgis_search import postgis_search
 from app.tools.property_search import property_search
 from app.tools.schemas.inputs import (
     CalculatorInput,
     CompanySearchInput,
     CoworkingSearchInput,
+    NewsSearchInput,
     PostGISSearchInput,
     PropertySearchInput,
     SignalLookupInput,
     TenantSearchInput,
     VectorSearchInput,
+    WebSearchInput,
 )
+from app.tools.search_cache import SearchCache
+from app.tools.search_provider import SearchProvider
 from app.tools.signal_lookup import signal_lookup
 from app.tools.tenant_search import tenant_search
 from app.tools.vector_search import vector_search
+from app.tools.web_search import web_search
 
 
-def create_company_search_tool(
-    db: ReadOnlyDatabase,
-) -> StructuredTool:
+def create_company_search_tool(db: ReadOnlyDatabase) -> StructuredTool:
     async def run(**kwargs):
         request = CompanySearchInput.model_validate(kwargs)
         return await company_search(request, db)
@@ -47,9 +48,7 @@ def create_company_search_tool(
     )
 
 
-def create_tenant_search_tool(
-    db: ReadOnlyDatabase,
-) -> StructuredTool:
+def create_tenant_search_tool(db: ReadOnlyDatabase) -> StructuredTool:
     async def run(**kwargs):
         request = TenantSearchInput.model_validate(kwargs)
         return await tenant_search(request, db)
@@ -65,9 +64,7 @@ def create_tenant_search_tool(
     )
 
 
-def create_coworking_search_tool(
-    db: ReadOnlyDatabase,
-) -> StructuredTool:
+def create_coworking_search_tool(db: ReadOnlyDatabase) -> StructuredTool:
     async def run(**kwargs):
         request = CoworkingSearchInput.model_validate(kwargs)
         return await coworking_search(request, db)
@@ -76,16 +73,13 @@ def create_coworking_search_tool(
         coroutine=run,
         name="coworking_search",
         description=(
-            "Search coworking branches using operator, city, and area "
-            "filters."
+            "Search coworking branches using operator, city, and area filters."
         ),
         args_schema=CoworkingSearchInput,
     )
 
 
-def create_property_search_tool(
-    db: ReadOnlyDatabase,
-) -> StructuredTool:
+def create_property_search_tool(db: ReadOnlyDatabase) -> StructuredTool:
     async def run(**kwargs):
         request = PropertySearchInput.model_validate(kwargs)
         return await property_search(request, db)
@@ -94,16 +88,13 @@ def create_property_search_tool(
         coroutine=run,
         name="property_search",
         description=(
-            "Search properties using property type, city, area, and "
-            "total-area filters."
+            "Search properties using property type, city, area, and total-area filters."
         ),
         args_schema=PropertySearchInput,
     )
 
 
-def create_postgis_search_tool(
-    db: ReadOnlyDatabase,
-) -> StructuredTool:
+def create_postgis_search_tool(db: ReadOnlyDatabase) -> StructuredTool:
     async def run(**kwargs):
         request = PostGISSearchInput.model_validate(kwargs)
         return await postgis_search(request, db)
@@ -112,8 +103,7 @@ def create_postgis_search_tool(
         coroutine=run,
         name="postgis_search",
         description=(
-            "Find nearby company locations using latitude, longitude, "
-            "and a bounded radius."
+            "Find nearby company locations using latitude, longitude, and a bounded radius."
         ),
         args_schema=PostGISSearchInput,
     )
@@ -121,17 +111,31 @@ def create_postgis_search_tool(
 
 def create_vector_search_tool(
     retriever: HybridRetriever,
+    default_company_id: UUID | None = None,
 ) -> StructuredTool:
     async def run(**kwargs):
         request = VectorSearchInput.model_validate(kwargs)
+
+        # Company-scoped registry: never trust a model/user-supplied company_id.
+        if default_company_id is not None:
+            request = request.model_copy(
+                update={"company_id": default_company_id}
+            )
+
         return await vector_search(request, retriever)
+
+    scope_note = (
+        " Results are forcibly restricted to the active company's knowledge base."
+        if default_company_id is not None
+        else ""
+    )
 
     return StructuredTool.from_function(
         coroutine=run,
         name="vector_search",
         description=(
             "Search indexed documents using bounded hybrid vector and "
-            "keyword retrieval."
+            "keyword retrieval." + scope_note
         ),
         args_schema=VectorSearchInput,
     )
@@ -139,16 +143,30 @@ def create_vector_search_tool(
 
 def create_signal_lookup_tool(
     db: ReadOnlyDatabase,
+    default_company_id: UUID | None = None,
 ) -> StructuredTool:
     async def run(**kwargs):
         request = SignalLookupInput.model_validate(kwargs)
+
+        if default_company_id is not None:
+            request = request.model_copy(
+                update={"company_id": default_company_id}
+            )
+
         return await signal_lookup(request, db)
+
+    scope_note = (
+        " Results are forcibly restricted to the active company."
+        if default_company_id is not None
+        else ""
+    )
 
     return StructuredTool.from_function(
         coroutine=run,
         name="signal_lookup",
         description=(
             "Look up company signals using bounded read-only filters."
+            + scope_note
         ),
         args_schema=SignalLookupInput,
     )
@@ -163,12 +181,12 @@ def create_calculator_tool() -> StructuredTool:
         func=run,
         name="calculator",
         description=(
-            "Perform safe arithmetic using numbers, parentheses, "
-            "addition, subtraction, multiplication, division, modulo, "
-            "and unary plus/minus."
+            "Perform safe arithmetic using numbers, parentheses, addition, "
+            "subtraction, multiplication, division, modulo, and unary plus/minus."
         ),
         args_schema=CalculatorInput,
     )
+
 
 def create_web_search_tool(
     provider: SearchProvider,

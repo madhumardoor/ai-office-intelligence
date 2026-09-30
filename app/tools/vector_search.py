@@ -11,7 +11,13 @@ async def vector_search(
     request: VectorSearchInput,
     retriever: HybridRetriever,
 ) -> list[dict[str, Any]]:
-    """Run bounded hybrid retrieval through the existing Phase 4 retriever."""
+    """Run bounded company-scoped hybrid retrieval.
+
+    The current HybridChunk contract exposes chunk_id, content, document_type,
+    company_id, published_on, score, keyword_rank, and vector_rank. Keep this
+    tool aligned with that contract instead of assuming document-level fields
+    that HybridChunk does not provide.
+    """
 
     filters = RetrievalFilters(
         company_ids=(request.company_id,)
@@ -31,15 +37,12 @@ async def vector_search(
     return [
         {
             "chunk_id": str(chunk.chunk_id),
-            "document_id": str(chunk.document_id),
             "company_id": (
                 str(chunk.company_id)
                 if chunk.company_id is not None
                 else None
             ),
-            "title": chunk.title,
             "content": chunk.content,
-            "source_url": chunk.source_url,
             "document_type": chunk.document_type,
             "published_on": (
                 chunk.published_on.isoformat()

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.knowledge import DocumentChunk
@@ -33,18 +34,27 @@ class EmbeddingService:
         self.embedder = embedder
         self.batch_size = batch_size
 
-    async def embed_pending(self, session: AsyncSession) -> EmbeddingStats:
-        """Embed all chunks whose embedding is currently NULL.
+    async def embed_pending(
+        self,
+        session: AsyncSession,
+        company_id: UUID | None = None,
+    ) -> EmbeddingStats:
+        """Embed pending chunks, optionally restricted to one company.
 
         Identical chunk content reuses an existing embedding from the database.
         Provider failures leave affected chunks pending instead of deleting data.
         """
 
-        result = await session.execute(
+        query = (
             select(DocumentChunk)
             .where(DocumentChunk.embedding.is_(None))
             .order_by(DocumentChunk.created_at, DocumentChunk.id)
         )
+
+        if company_id is not None:
+            query = query.where(DocumentChunk.company_id == company_id)
+
+        result = await session.execute(query)
         pending = list(result.scalars().all())
 
         if not pending:
@@ -100,22 +110,22 @@ class EmbeddingService:
                 embedded += len(batch)
 
             except EmbeddingError:
-                # Leave this batch pending. Do not lose the source chunks.
                 failed_batches += 1
 
             except Exception:
-                # Provider implementations may raise a provider-specific
-                # exception. Keep the ingestion pipeline resilient.
                 failed_batches += 1
 
-        # Flush successful/cache assignments so callers can commit normally.
         await session.flush()
 
-        pending_after = (
-            await session.execute(
-                select(DocumentChunk.id).where(DocumentChunk.embedding.is_(None))
+        pending_query = select(DocumentChunk.id).where(
+            DocumentChunk.embedding.is_(None)
+        )
+        if company_id is not None:
+            pending_query = pending_query.where(
+                DocumentChunk.company_id == company_id
             )
-        ).all()
+
+        pending_after = (await session.execute(pending_query)).all()
 
         return EmbeddingStats(
             embedded=embedded,

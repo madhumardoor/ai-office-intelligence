@@ -34,6 +34,26 @@ class Settings(BaseSettings):
     postgres_port: int = 5432
     agent_ro_password: SecretStr = Field(default=SecretStr(""))
 
+    # --- Redis persistent memory ---
+    redis_url: str = "redis://localhost:6379/0"
+
+    redis_memory_ttl_seconds: int = Field(
+        default=2592000,
+        ge=60,
+    )
+
+    redis_memory_max_messages: int = Field(
+        default=200,
+        ge=10,
+        le=5000,
+    )
+
+    redis_memory_max_turns: int = Field(
+        default=100,
+        ge=10,
+        le=1000,
+    )
+
     db_pool_size: int = Field(default=10, ge=1, le=100)
     db_max_overflow: int = Field(default=10, ge=0, le=100)
     db_pool_timeout_seconds: int = Field(default=30, ge=1)
@@ -114,9 +134,9 @@ class Settings(BaseSettings):
 
     # --- LLM ---
     llm_provider: Literal[
-    "gemini",
-    "openai",
-    "groq",
+        "gemini",
+        "openai",
+        "groq",
     ] = "groq"
 
     llm_api_key: SecretStr = Field(

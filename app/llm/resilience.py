@@ -20,9 +20,7 @@ from app.llm.types import (
     LLMUnavailableError,
 )
 
-
 logger = logging.getLogger(__name__)
-
 R = TypeVar("R")
 
 
@@ -49,27 +47,35 @@ class CircuitBreaker:
 
     @property
     def is_open(self) -> bool:
-        """Return whether calls should currently fail fast."""
         if self._opened_at is None:
             return False
 
         if self._clock() - self._opened_at >= self._reset:
-            # Half-open state: allow one trial call.
             return False
 
         return True
 
     def record_success(self) -> None:
-        """Reset breaker after a successful call."""
         self._failures = 0
         self._opened_at = None
 
     def record_failure(self) -> None:
-        """Record a failed logical call."""
         self._failures += 1
 
         if self._failures >= self._threshold:
             self._opened_at = self._clock()
+
+
+def _is_rate_limit(exc: Exception) -> bool:
+    text = f"{type(exc).__name__} {exc}".lower()
+
+    return (
+        "429" in text
+        or "rate limit" in text
+        or "ratelimit" in text
+        or "tokens per minute" in text
+        or "tpm" in text
+    )
 
 
 async def call_with_resilience(
@@ -82,24 +88,19 @@ async def call_with_resilience(
     base_delay: float = 1.0,
     max_delay: float = 20.0,
 ) -> R:
-    """Execute an async provider call with timeout/retry/circuit breaking."""
-
-    if timeout_s <= 0:
-        raise ValueError("timeout_s must be > 0")
-
-    if max_retries < 0:
-        raise ValueError("max_retries must be >= 0")
-
     if breaker.is_open:
         raise LLMUnavailableError(
             "LLM circuit breaker is open; failing fast"
         )
 
-    last_error: Exception | None = None
+    last: Exception | None = None
 
     for attempt in range(max_retries + 1):
         try:
-            result = await asyncio.wait_for(fn(), timeout=timeout_s)
+            result = await asyncio.wait_for(
+                fn(),
+                timeout=timeout_s,
+            )
             breaker.record_success()
             return result
 
@@ -108,7 +109,18 @@ async def call_with_resilience(
             raise
 
         except (LLMTransientError, TimeoutError) as exc:
-            last_error = exc
+            last = exc
+
+            # Rate-limit errors are transient and should follow the
+            # normal exponential-backoff retry path.
+            if _is_rate_limit(exc):
+                logger.warning(
+                    "LLM rate limit; retrying",
+                    extra={
+                        "attempt": attempt + 1,
+                        "error": type(exc).__name__,
+                    },
+                )
 
             if attempt == max_retries:
                 break
@@ -116,7 +128,7 @@ async def call_with_resilience(
             delay = min(
                 max_delay,
                 base_delay * (2**attempt),
-            ) * random.uniform(0.5, 1.0)
+            ) * random.uniform(0.5, 1.0)  # noqa: S311
 
             logger.warning(
                 "LLM transient failure; retrying",
@@ -133,5 +145,5 @@ async def call_with_resilience(
 
     raise LLMUnavailableError(
         f"LLM unavailable after {max_retries + 1} attempts: "
-        f"{type(last_error).__name__}"
-    ) from last_error
+        f"{type(last).__name__}"
+    ) from last

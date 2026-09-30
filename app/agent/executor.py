@@ -15,12 +15,16 @@ class ToolExecutionError(RuntimeError):
 
 def _first_company(state: AgentState) -> str | None:
     route = state["route"]
+
     if route.company_names:
         return route.company_names[0]
+
     return None
 
 
-def _extract_arithmetic_expression(question: str) -> str | None:
+def _extract_arithmetic_expression(
+    question: str,
+) -> str | None:
     """
     Extract a simple arithmetic expression from natural-language text.
 
@@ -39,7 +43,9 @@ def _extract_arithmetic_expression(question: str) -> str | None:
     return matches[0].strip()
 
 
-def _extract_coordinates(question: str) -> tuple[float, float] | None:
+def _extract_coordinates(
+    question: str,
+) -> tuple[float, float] | None:
     """
     Extract latitude/longitude when explicitly present in the question.
 
@@ -84,18 +90,47 @@ def _build_tool_kwargs(
     question = state["question"]
     company = _first_company(state)
 
+    # ---------------------------------------------------------------
+    # Company search
+    # ---------------------------------------------------------------
+    #
+    # Important:
+    # If the user asks:
+    #   "Which companies are listed in Bengaluru?"
+    #
+    # company is None, so query MUST remain None.
+    # The city filter then returns all matching Bengaluru companies.
+    #
+    # If the user asks:
+    #   "Is Nova Labs listed in Bengaluru?"
+    #
+    # company becomes "Nova Labs", so the tool searches for that
+    # specific company and applies the Bengaluru filter.
+    #
     if tool_name == "company_search":
         return {
-            "query": company or question,
+            "query": company,
             "city": route.city,
             "limit": 20,
         }
 
+    # ---------------------------------------------------------------
+    # Tenant search
+    # ---------------------------------------------------------------
+    #
+    # Do not send the entire natural-language question as a text
+    # search. Only search by a company name when one was explicitly
+    # extracted by the router.
+    #
     if tool_name == "tenant_search":
         return {
-            "query": company or question,
+            "query": company,
             "limit": 20,
         }
+
+    # ---------------------------------------------------------------
+    # Coworking search
+    # ---------------------------------------------------------------
 
     if tool_name == "coworking_search":
         return {
@@ -105,18 +140,29 @@ def _build_tool_kwargs(
             "limit": 20,
         }
 
+    # ---------------------------------------------------------------
+    # Property search
+    # ---------------------------------------------------------------
+
     if tool_name == "property_search":
         return {
-            "query": question,
+            "query": company,
             "city": route.city,
             "area": route.area,
             "limit": 20,
         }
 
+    # ---------------------------------------------------------------
+    # PostGIS search
+    # ---------------------------------------------------------------
+
     if tool_name == "postgis_search":
         coordinates = _extract_coordinates(question)
 
-        if coordinates is None or route.radius_km is None:
+        if coordinates is None:
+            return None
+
+        if route.radius_km is None:
             return None
 
         latitude, longitude = coordinates
@@ -129,11 +175,19 @@ def _build_tool_kwargs(
             "limit": 20,
         }
 
+    # ---------------------------------------------------------------
+    # Vector search
+    # ---------------------------------------------------------------
+
     if tool_name == "vector_search":
         return {
             "query": question,
             "limit": 8,
         }
+
+    # ---------------------------------------------------------------
+    # Signal lookup
+    # ---------------------------------------------------------------
 
     if tool_name == "signal_lookup":
         return {
@@ -141,8 +195,14 @@ def _build_tool_kwargs(
             "limit": 20,
         }
 
+    # ---------------------------------------------------------------
+    # Calculator
+    # ---------------------------------------------------------------
+
     if tool_name == "calculator":
-        expression = _extract_arithmetic_expression(question)
+        expression = _extract_arithmetic_expression(
+            question
+        )
 
         if expression is None:
             return None
@@ -151,11 +211,19 @@ def _build_tool_kwargs(
             "expression": expression,
         }
 
+    # ---------------------------------------------------------------
+    # Web search
+    # ---------------------------------------------------------------
+
     if tool_name == "web_search":
         return {
             "query": question,
             "limit": 10,
         }
+
+    # ---------------------------------------------------------------
+    # News search
+    # ---------------------------------------------------------------
 
     if tool_name == "news_search":
         return {
@@ -170,7 +238,9 @@ def _build_tool_kwargs(
     )
 
 
-def _normalize_result(value: Any) -> list[dict[str, Any]]:
+def _normalize_result(
+    value: Any,
+) -> list[dict[str, Any]]:
     """
     Normalize StructuredTool output into the AgentState shape.
     """
@@ -185,14 +255,22 @@ def _normalize_result(value: Any) -> list[dict[str, Any]]:
             if isinstance(item, dict):
                 result.append(item)
             else:
-                result.append({"value": item})
+                result.append(
+                    {
+                        "value": item
+                    }
+                )
 
         return result
 
     if isinstance(value, dict):
         return [value]
 
-    return [{"value": value}]
+    return [
+        {
+            "value": value
+        }
+    ]
 
 
 async def execute_tools(
@@ -213,7 +291,9 @@ async def execute_tools(
     route = state.get("route")
 
     if route is None:
-        raise ValueError("agent state is missing route")
+        raise ValueError(
+            "agent state is missing route"
+        )
 
     if route.needs_clarification:
         return {
@@ -224,27 +304,40 @@ async def execute_tools(
     results: dict[str, list[dict[str, Any]]] = {}
 
     for tool_name in route.tools_required:
-        tool = tool_registry.get(tool_name)
+
+        tool = tool_registry.get(
+            tool_name
+        )
 
         if tool is None:
             raise ToolExecutionError(
                 f"tool is not available in registry: {tool_name}"
             )
 
-        kwargs = _build_tool_kwargs(tool_name, state)
+        kwargs = _build_tool_kwargs(
+            tool_name,
+            state,
+        )
 
         if kwargs is None:
             results[tool_name] = [
                 {
                     "status": "skipped",
-                    "reason": "insufficient information for safe execution",
+                    "reason": (
+                        "insufficient information "
+                        "for safe execution"
+                    ),
                 }
             ]
             continue
 
-        value = await tool.ainvoke(kwargs)
+        value = await tool.ainvoke(
+            kwargs
+        )
 
-        results[tool_name] = _normalize_result(value)
+        results[tool_name] = _normalize_result(
+            value
+        )
 
     return {
         **state,

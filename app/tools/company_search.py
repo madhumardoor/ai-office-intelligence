@@ -13,7 +13,16 @@ async def company_search(
     """Search companies using the PII-free v_companies view."""
 
     conditions: list[str] = []
-    params: dict[str, Any] = {"limit": request.limit}
+
+    params: dict[str, Any] = {
+        "query": None,
+        "city": None,
+        "industry": None,
+        "min_employee_count": None,
+        "max_employee_count": None,
+        "exact_name": request.query,
+        "limit": request.limit,
+    }
 
     if request.query:
         conditions.append(
@@ -25,30 +34,46 @@ async def company_search(
             )
             """
         )
+
         params["query"] = f"%{request.query}%"
 
     if request.city:
-        conditions.append("city ILIKE :city")
+        conditions.append(
+            "city ILIKE :city"
+        )
         params["city"] = f"%{request.city}%"
 
     if request.industry:
-        conditions.append("industry ILIKE :industry")
+        conditions.append(
+            "industry ILIKE :industry"
+        )
         params["industry"] = f"%{request.industry}%"
 
     if request.min_employee_count is not None:
-        conditions.append("employee_count >= :min_employee_count")
-        params["min_employee_count"] = request.min_employee_count
+        conditions.append(
+            "employee_count >= :min_employee_count"
+        )
+        params["min_employee_count"] = (
+            request.min_employee_count
+        )
 
     if request.max_employee_count is not None:
-        conditions.append("employee_count <= :max_employee_count")
-        params["max_employee_count"] = request.max_employee_count
+        conditions.append(
+            "employee_count <= :max_employee_count"
+        )
+        params["max_employee_count"] = (
+            request.max_employee_count
+        )
 
     where_clause = ""
 
     if conditions:
-        where_clause = "WHERE " + " AND ".join(
-            f"({condition.strip()})"
-            for condition in conditions
+        where_clause = (
+            "WHERE "
+            + " AND ".join(
+                f"({condition.strip()})"
+                for condition in conditions
+            )
         )
 
     sql = f"""
@@ -65,8 +90,9 @@ async def company_search(
         {where_clause}
         ORDER BY
             CASE
-                WHEN :query_exact IS NOT NULL
-                     AND lower(name) = lower(:query_exact)
+                WHEN lower(name) = lower(
+                    CAST(:exact_name AS TEXT)
+                )
                 THEN 0
                 ELSE 1
             END,
@@ -74,6 +100,7 @@ async def company_search(
         LIMIT :limit
     """
 
-    params["query_exact"] = request.query
-
-    return await db.fetch_all(sql, params)
+    return await db.fetch_all(
+        sql,
+        params,
+    )
