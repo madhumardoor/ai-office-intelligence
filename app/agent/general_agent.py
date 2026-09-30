@@ -400,7 +400,7 @@ Evidence:
         final_text = summary if any(f"[{eid}]" in summary for eid in evidence_ids) else f"{summary} {citations}"
 
         claim = Claim(
-            text=summary[:700],
+            text=summary[:600],
             kind="fact",
             evidence_ids=evidence_ids,
         )
